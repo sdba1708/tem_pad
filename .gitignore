@@ -1,0 +1,9 @@
+main.build
+main.dist
+main.onefile-build
+test
+./*.png
+util/dump/*
+util/*.png
+tools/*
+main.exe
