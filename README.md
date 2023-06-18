@@ -56,6 +56,9 @@ Tem-Pick Assis Tool(TemPAT)。temtemのプレイをサポートするツール�
     - Pythonコードから実行可能ファイルへの変換にnuitkaというライブラリを使用しているのですが、セキュリティソフトがウイルスと誤検知することがあるようです。今のところ有償版を使う以外に回避方法を見つけられていない状態です。（もしかしたら調査が足りないだけかもしれないですが）
     - セキュリティ対象から除外することで問題なく動くことが確認できていますが、**自己責任**でお願いします。
 
+- アプリが変な場所に表示される
+    - 「temtem」という名前の別ウィンドウが開いていると、そちらにアプリが追随する可能性があります。特にエクスプローラーで「temtem」というフォルダを開いている場合この現象が発生しやすいです。
+
 # ポリシー
 
 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img alt="クリエイティブ・コモンズ・ライセンス" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />この 作品 は <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">クリエイティブ・コモンズ 表示 - 非営利 - 継承 4.0 国際 ライセンス</a>の下に提供されています。
