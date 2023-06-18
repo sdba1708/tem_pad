@@ -1,6 +1,6 @@
 # これはなに？
 
-Tem-Pick Assis Tool(TemPAT)。temtemのプレイをサポートするツールです。
+Tem-Pick Assist Tool(TemPAT)。temtemのプレイをサポートするツールです。
 
 
 # 何ができるの？
