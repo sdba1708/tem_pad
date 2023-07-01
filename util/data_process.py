@@ -34,14 +34,18 @@ class data_processor():
 def get_setting_init():
     ofst_x = 0
     ofst_y = 0
+    dump_flag = False
+    link_var = "official"
     with open("./data/ofst.ini", "r") as f:
         line = f.readlines()
-        ofst_x = line[0]
-        ofst_y = line[1]
-    return int(ofst_x), int(ofst_y)
+        ofst_x = line[0].replace('\n', "")
+        ofst_y = line[1].replace('\n', "")
+        dump_flag = True if line[2].replace('\n', "") == "True" else False
+        link_var = line[3].replace('\n', "")
+    return [int(ofst_x), int(ofst_y), dump_flag, link_var]
     
-def save_setting_init(ofst_x, ofst_y):
+def save_setting_init(tmp_list):
     with open("./data/ofst.ini", "w") as f:
-         f.write(str(ofst_x)+'\n')
-         f.write(str(ofst_y)+'\n')
+        for i in tmp_list:
+            f.write(i+'\n')
     return 
