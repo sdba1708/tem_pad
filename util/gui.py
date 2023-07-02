@@ -37,7 +37,6 @@ class Window():
         
         self.yaml_path = os.path.join('data', 'config.yaml')
         self.config_data = get_config_data(self.yaml_path)
-        tmp_set_data = get_setting_init()
         #self.detection_ofs = {
         #    "ofst_x" : tmp_set_data[0],
         #    "ofst_y" : tmp_set_data[1],
