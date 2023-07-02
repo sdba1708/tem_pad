@@ -1,6 +1,6 @@
 
 # -*- coding: utf-8 -*-
-
+# common
 #from sys import get_asyncgen_hooks
 from tkinter import * 
 from tkinter import ttk, font
@@ -10,16 +10,17 @@ from tkinter import ttk, font
 from PIL import Image, ImageTk, ImageGrab
 import numpy as np
 import os
-#import pygetwindow as gw
 import win32gui
 import time
 import pandas as pd
-from util.img_process import detect_tem, gen_tech_imgs, load_icon
-from util.data_process import data_processor, get_setting_init, save_setting_init
-from util.common import get_app_rect
 import cv2
 import webbrowser
 import threading
+import yaml
+# personal
+from util.img_process import detect_tem, gen_tech_imgs, load_icon
+from util.data_process import data_processor, get_setting_init, save_setting_init
+from util.common import get_app_rect, get_config_data, save_config_data
 
 DEBUG_FLAG=False
 
@@ -34,13 +35,17 @@ class Window():
         #icon = PhotoImage(file="data\\icon.png")
         self.root.iconphoto(True, PhotoImage(data=load_icon()))
         
+        self.yaml_path = os.path.join('data', 'config.yaml')
+        self.config_data = get_config_data(self.yaml_path)
         tmp_set_data = get_setting_init()
-        self.detection_ofs = {
-            "ofst_x" : tmp_set_data[0],
-            "ofst_y" : tmp_set_data[1],
-            "dump_flag" : BooleanVar(value=tmp_set_data[2]),
-            "link_var" : StringVar(value=tmp_set_data[3])
-        }
+        #self.detection_ofs = {
+        #    "ofst_x" : tmp_set_data[0],
+        #    "ofst_y" : tmp_set_data[1],
+        #    "dump_flag" : BooleanVar(value=tmp_set_data[2]),
+        #    "link_var" : StringVar(value=tmp_set_data[3])
+        #}
+        self.detection_dump_flag = BooleanVar(value=self.config_data['det_win']['dump'])
+        self.link_var = StringVar(value=self.config_data['general']['link'])
         self.url_setting={
             "official" : "https://temtem.wiki.gg/wiki",
             "temtetsu" : "https://temtetsu.pages.dev/species"
@@ -169,7 +174,7 @@ class Window():
         self.left_button = ttk.Button(
             self.left_base_frame,
             text='認識',
-            command=lambda: self.update_window(left_flag=True)
+            command=lambda: self.button_update_window(left_flag=True)
             )
         
         self.left_detail_button = ttk.Button(
@@ -187,7 +192,7 @@ class Window():
         self.right_button = ttk.Button(
             self.right_base_frame,
             text='認識',
-            command=lambda: self.update_window(left_flag=False)
+            command=lambda: self.button_update_window(left_flag=False)
             )
         
         self.right_detail_button = ttk.Button(
@@ -231,19 +236,25 @@ class Window():
             None,
             None
         ]
-        self.res_win_pos = [
-            None,   # left
-            None    # right
-        ]
-        self.stats_win_obj = [
-            None,
-            None
-        ]
-        self.stats_win_pos = [
-            None,   # left
-            None    # right
-        ]
         
+        class subwindow():
+            def __init__(self):
+                self.obj = [
+                    None,
+                    None
+                ]
+                self.pos = [
+                    None,
+                    None
+                ]
+                self.size = [
+                    None,
+                    None
+                ]
+        self.res_sub = subwindow()
+        self.stats_sub = subwindow()
+                
+       
         self.timeEvent()
         
 
@@ -255,13 +266,21 @@ class Window():
     #
     def update(self):
         # update window pos
-        _, rect = get_app_rect()
+        tem_window, rect = get_app_rect(width=1600, height=930)       # window, [left, right, top, bottom]
         if rect is not None:
             #print(rect)
-            self.root.geometry("+"+str(rect.left-106)+"+"+str(rect.top-20))
-           
-
-
+            self.root.geometry("+"+str(rect[0]- (108 - self.config_data["general"]["show_ofst_x"]))+"+"+str(rect[2]-(20 - self.config_data["general"]["show_ofst_y"])))
+            #print(rect[0]-100)
+            #if self.auto_cap_mod:
+            #    # capture window
+            #    bb = [rect.left, rect.top, rect.right, rect.bottom]
+            #    win32gui.SetForegroundWindow(tem_window)
+            #    time.sleep(0.1)
+            #    scs = ImageGrab.grab(bbox=bb)
+            #    pb_flag = IsPBWinodow(src)
+            #    if self.prev_pb_flag is False and pb_flag is True:
+            #        self.auto_update_window(scs)
+                
     def mouse_wheel_stats(self, event):
         self.stats_window._canvas.yview_scroll(int(-1*(event.delta/120)), "units") 
     def mouse_wheel_type(self, event):
@@ -276,13 +295,13 @@ class Window():
             scs = cv2.imread("dump_screenshot.png")
             return scs
 
-        tem_window, rect = get_app_rect()
+        tem_window, rect = get_app_rect(width=1600, height=930)
         if rect is None:
             return []
         #bb = [x1, y1, x2, y2]
-        bb = [rect.left, rect.top, rect.right, rect.bottom]
+        bb = [rect[0], rect[2], rect[1], rect[3]]
         win32gui.SetForegroundWindow(tem_window)
-        time.sleep(0.5)
+        time.sleep(0.1)
         scs = ImageGrab.grab(bbox=bb)
         # dump
         #scs.save("dump_screenshot.png")
@@ -299,15 +318,15 @@ class Window():
         else:
             return int(s)
         
-    def update_window(self, left_flag=False):
+    def button_update_window(self, left_flag=False):
     
         # get screenshot
         scs = self.get_screenshot(dummy=DEBUG_FLAG)
         
         # get Entry data
-        ofs_x = self.detection_ofs["ofst_x"]
-        ofs_y = self.detection_ofs["ofst_y"] #self.is_num(self.tb2.get())
-        tmp_flag = self.detection_ofs["dump_flag"].get()
+        ofs_x = self.config_data["det_win"]["ofst_x"]
+        ofs_y = self.config_data["det_win"]["ofst_y"] #self.is_num(self.tb2.get())
+        tmp_flag = self.detection_dump_flag.get()
 
         # もしleft, right両方ともまだ未認識だったらどちらも認識を走らせる
         run_left = left_flag
@@ -351,7 +370,7 @@ class Window():
                 self.left_imgs["name"][i] = tmp_name
                 self.left_obj["name"][i].config(text=tmp_name_jp)
                 self.left_imgs["stats"][i] = [self.tem_db.iloc[tem_list[i], 5], self.tem_db.iloc[tem_list[i], 6], self.tem_db.iloc[tem_list[i], 7], self.tem_db.iloc[tem_list[i], 8], self.tem_db.iloc[tem_list[i], 9], self.tem_db.iloc[tem_list[i], 10], self.tem_db.iloc[tem_list[i], 11]]
-                if self.detection_ofs["link_var"].get() == "official":
+                if self.link_var.get() == "official":
                     link_list[0].append("https://temtem.wiki.gg/wiki/" + tmp_name)
                 else:
                     link_list[0].append("https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_list[i], 0]))
@@ -367,11 +386,11 @@ class Window():
             self.left_obj["name"][7].bind("<Button-1>",lambda e:self.link_click(link_list[0][7]))
             
             # update sub windows if they are opend
-            if self.res_win_obj[0] is not None:
+            if self.res_sub.obj[0] is not None:
                 self.close_res_win(0)
                 self.show_type_res(left_flag=True)
                 
-            if self.stats_win_obj[0] is not None:
+            if self.stats_sub.obj[0] is not None:
                 self.close_stats_win(0)
                 self.show_stats(left_flag=True)
                 
@@ -407,7 +426,7 @@ class Window():
                 self.right_imgs["name"][i] = tmp_name
                 self.right_obj["name"][i].config(text=tmp_name_jp)
                 self.right_imgs["stats"][i] = [self.tem_db.iloc[tem_list[i], 5], self.tem_db.iloc[tem_list[i], 6], self.tem_db.iloc[tem_list[i], 7], self.tem_db.iloc[tem_list[i], 8], self.tem_db.iloc[tem_list[i], 9], self.tem_db.iloc[tem_list[i], 10], self.tem_db.iloc[tem_list[i], 11]]
-                if self.detection_ofs["link_var"].get() == "official":
+                if self.link_var.get() == "official":
                     link_list[1].append("https://temtem.wiki.gg/wiki/" + tmp_name)
                 else:
                     link_list[1].append("https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_list[i], 0]))
@@ -423,11 +442,11 @@ class Window():
             self.right_obj["name"][7].bind("<Button-1>",lambda e:self.link_click(link_list[1][7]))
             
             # update sub windows if they are opend
-            if self.res_win_obj[1] is not None:
+            if self.res_sub.obj[1] is not None:
                 self.close_res_win(1)
                 self.show_type_res(left_flag=False)
                 
-            if self.stats_win_obj[1] is not None:
+            if self.stats_sub.obj[1] is not None:
                 self.close_stats_win(1)
                 self.show_stats(left_flag=False)
                 
@@ -436,31 +455,30 @@ class Window():
     def show_type_res(self, left_flag=False):
         flag_idx = 0 if left_flag else 1
        
-        if self.res_win_obj[flag_idx] is not None:
+        if self.res_sub.obj[flag_idx] is not None:
             return
         
-        self.res_win_obj[flag_idx] = Toplevel()
-        tmp_x, tmp_y = 0, 0
-        if left_flag:
-            if self.res_win_pos[0] is None:
+        self.res_sub.obj[flag_idx] = Toplevel()
+        tmp_x, tmp_y = str(0), str(0)
+        if self.res_sub.pos[flag_idx] is None:
+            if left_flag:
                 tmp_x = str(self.left_detail_button.winfo_rootx())
                 tmp_y = str(self.left_detail_button.winfo_rooty()-400)
-                self.res_win_pos[0] = [tmp_x, tmp_y]
             else:
-                tmp_x = str(self.res_win_pos[0][0] - 8)
-                tmp_y = str(self.res_win_pos[0][1] - 31)
-        else:
-            if self.res_win_pos[1] is None:
                 tmp_x = str(self.right_detail_button.winfo_rootx())
                 tmp_y = str(self.right_detail_button.winfo_rooty()-400)
-                self.res_win_pos[1] = [tmp_x, tmp_y]
-            else:
-                tmp_x = str(self.res_win_pos[1][0] - 8)
-                tmp_y = str(self.res_win_pos[1][1] - 31)
+            self.res_sub.pos[flag_idx] = [tmp_x, tmp_y]
+        else:
+            tmp_x = str(self.res_sub.pos[flag_idx][0] - 8)      # なぜかずれるのでオフセットが必要
+            tmp_y = str(self.res_sub.pos[flag_idx][1] - 31)     # なぜかずれるのでオフセットが必要
         
-        self.res_win_obj[flag_idx].geometry("500x400+"+tmp_x+"+"+tmp_y)
-        self.res_win_obj[flag_idx].title('Team Resistances')
-        type_window = Frame(self.res_win_obj[flag_idx], width = 500, height=400)
+        tmp_w, tmp_h = 500, 400
+        if self.res_sub.size[flag_idx] is not None:
+            tmp_w, tmp_h = self.res_sub.size[flag_idx]
+             
+        self.res_sub.obj[flag_idx].geometry(str(tmp_w)+"x"+str(tmp_h)+"+"+tmp_x+"+"+tmp_y)
+        self.res_sub.obj[flag_idx].title('Team Resistances')
+        type_window = Frame(self.res_sub.obj[flag_idx], width = tmp_w, height = tmp_h)
         type_window.pack(fill='both', expand=True)
 
             
@@ -501,46 +519,47 @@ class Window():
                         tmp_color="red"
                     res_num = Label(type_window, text="x"+res_summary[j], height = 2, width=4, relief=SOLID, bg=tmp_color)
                     res_num.grid(column=j+1, row=i+1)        
-        self.res_win_obj[flag_idx].protocol("WM_DELETE_WINDOW", lambda : self.close_res_win(flag_idx))
+        self.res_sub.obj[flag_idx].protocol("WM_DELETE_WINDOW", lambda : self.close_res_win(flag_idx))
         
         
     def close_res_win(self, idx):
-        pos_x = self.res_win_obj[idx].winfo_rootx()
-        pos_y = self.res_win_obj[idx].winfo_rooty()
-        self.res_win_pos[idx] = [pos_x, pos_y]
-        self.res_win_obj[idx].destroy()
-        self.res_win_obj[idx] = None
+        pos_x = self.res_sub.obj[idx].winfo_rootx()
+        pos_y = self.res_sub.obj[idx].winfo_rooty()
+        size_x = self.res_sub.obj[idx].winfo_width()
+        size_y = self.res_sub.obj[idx].winfo_height()
+        self.res_sub.pos[idx] = [pos_x, pos_y]
+        self.res_sub.size[idx] = [size_x, size_y]
+        self.res_sub.obj[idx].destroy()
+        self.res_sub.obj[idx] = None
         
 
     def show_stats(self, left_flag=False):
         
         flag_idx = 0 if left_flag else 1
-        if self.stats_win_obj[flag_idx] is not None:
+        if self.stats_sub.obj[flag_idx] is not None:
             return
         
-        self.stats_win_obj[flag_idx] = Toplevel()
+        self.stats_sub.obj[flag_idx] = Toplevel()
         tmp_x, tmp_y = 0, 0
-        if left_flag:
-            if self.stats_win_pos[0] is None:
+        if self.stats_sub.pos[flag_idx] is None:
+            if left_flag:
                 tmp_x = str(self.left_detail_button.winfo_rootx())
                 tmp_y = str(self.left_detail_button.winfo_rooty()-400)
-                self.stats_win_pos[0] = [tmp_x, tmp_y]
             else:
-                tmp_x = str(self.stats_win_pos[0][0] - 8)
-                tmp_y = str(self.stats_win_pos[0][1] - 31)
-        else:
-            if self.stats_win_pos[1] is None:
                 tmp_x = str(self.right_detail_button.winfo_rootx())
                 tmp_y = str(self.right_detail_button.winfo_rooty()-400)
-                self.stats_win_pos[1] = [tmp_x, tmp_y]
-            else:
-                tmp_x = str(self.stats_win_pos[1][0] - 8)
-                tmp_y = str(self.stats_win_pos[1][1] - 31)
-            
+            self.stats_sub.pos[flag_idx] = [tmp_x, tmp_y]
+        else:
+            tmp_x = str(self.stats_sub.pos[flag_idx][0] - 8)
+            tmp_y = str(self.stats_sub.pos[flag_idx][1] - 31)     
      
-        self.stats_win_obj[flag_idx].geometry("500x400+"+tmp_x+"+"+tmp_y)
-        self.stats_win_obj[flag_idx].title('Team Stats')
-        stats_window = Frame(self.stats_win_obj[flag_idx], width = 500, height=400)
+        tmp_w, tmp_h = 500, 400
+        if self.stats_sub.size[flag_idx] is not None:
+            tmp_w, tmp_h = self.stats_sub.size[flag_idx]
+     
+        self.stats_sub.obj[flag_idx].geometry(str(tmp_w)+"x"+str(tmp_h)+"+"+tmp_x+"+"+tmp_y)
+        self.stats_sub.obj[flag_idx].title('Team Stats')
+        stats_window = Frame(self.stats_sub.obj[flag_idx], width = tmp_w, height = tmp_h)
         stats_window.pack(fill='both', expand=True)
 
         # Obj for get type info
@@ -573,14 +592,17 @@ class Window():
                         tmp_color="tomato"
                     stats_num = Label(stats_window, text=tmp_stats[j], height =2, width=6, relief=SOLID, bg=tmp_color)
                     stats_num.grid(column=j+1, row=i+1)
-        self.stats_win_obj[flag_idx].protocol("WM_DELETE_WINDOW", lambda : self.close_stats_win(flag_idx))
+        self.stats_sub.obj[flag_idx].protocol("WM_DELETE_WINDOW", lambda : self.close_stats_win(flag_idx))
                     
     def close_stats_win(self, idx):
-        pos_x = self.stats_win_obj[idx].winfo_rootx()
-        pos_y = self.stats_win_obj[idx].winfo_rooty()
-        self.stats_win_pos[idx] = [pos_x, pos_y]
-        self.stats_win_obj[idx].destroy()
-        self.stats_win_obj[idx] = None
+        pos_x = self.stats_sub.obj[idx].winfo_rootx()
+        pos_y = self.stats_sub.obj[idx].winfo_rooty()
+        size_x = self.stats_sub.obj[idx].winfo_width()
+        size_y = self.stats_sub.obj[idx].winfo_height()
+        self.stats_sub.pos[idx] = [pos_x, pos_y]
+        self.stats_sub.size[idx] = [size_x, size_y]
+        self.stats_sub.obj[idx].destroy()
+        self.stats_sub.obj[idx] = None
                     
     def show_tuning_window(self):
         sub_win = Toplevel()
@@ -594,12 +616,16 @@ class Window():
         tmp_text4 = ttk.Label(sub_win, text="pixel")
         tb1 = ttk.Entry(sub_win, width=10)
         tb2 = ttk.Entry(sub_win,width=10)
-        ref_bt = Button(sub_win, text="反映", command=lambda: self.update_ofst_params(self.is_num(tb1.get()), self.is_num(tb2.get())))
-        dump_check = ttk.Checkbutton(sub_win, text="検出枠出力", variable=self.detection_ofs["dump_flag"], onvalue=True, offvalue=False)
+        dump_check = ttk.Checkbutton(sub_win, text="検出枠出力", variable=self.detection_dump_flag, onvalue=True, offvalue=False)
+        ref_bt = Button(sub_win, text="反映", command=lambda: self.update_config_file(
+            "det_win",
+            ["ofst_x", "ofst_y", "dump"],
+            [self.is_num(tb1.get()), self.is_num(tb2.get()), self.detection_dump_flag.get()]
+            ))
         tb1.delete(0, END)
         tb2.delete(0, END)
-        tb1.insert(END, str(self.detection_ofs["ofst_x"]))
-        tb2.insert(END, str(self.detection_ofs["ofst_y"]))
+        tb1.insert(END, str(self.config_data["det_win"]["ofst_x"]))
+        tb2.insert(END, str(self.config_data["det_win"]["ofst_y"]))
         
         tmp_text0.grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
         tmp_text1.grid(column=0, row=1)
@@ -611,24 +637,62 @@ class Window():
         dump_check.grid(column=0, row=3)
         ref_bt.grid(column=0, row=4)
            
-    def update_ofst_params(self, in_x_ofst, in_y_ofst):
-        self.detection_ofs["ofst_x"] = in_x_ofst
-        self.detection_ofs["ofst_y"] = in_y_ofst
-        save_setting_init([str(in_x_ofst), str(in_y_ofst), "True" if self.detection_ofs["dump_flag"].get() else "False", self.detection_ofs["link_var"].get()])
+    #def update_ofst_params(self, in_x_ofst, in_y_ofst, flag):
+    #    self.config_data["det_win"]["ofst_x"] = in_x_ofst
+    #    self.config_data["det_win"]["ofst_y"] = in_y_ofst
+    #    self.config_data["det_win"]["dump"] = flag
+        #save_setting_init([str(in_x_ofst), str(in_y_ofst), "True" if self.detection_ofs["dump_flag"].get() else "False", self.detection_ofs["link_var"].get()])
+    #    save_config_data(self.yaml_path, self.config_data)
+    def update_config_file(self, tgt_key, param_names, param_data):
+        if len(param_names) != len(param_data):
+            return
+        for i in range(len(param_names)):
+            self.config_data[tgt_key][param_names[i]] = param_data[i]
+        save_config_data(self.yaml_path, self.config_data)
+        
         
     def show_setting_window(self):
         sub_win = Toplevel()
         sub_win.geometry("300x200")
         sub_win.title('Setting Window')
         tmp_text0 = ttk.Label(sub_win, text="使用するリンク先")
-        rdb0 = ttk.Radiobutton(sub_win, value="official", variable=self.detection_ofs["link_var"], text='公式Wiki')
-        rdb1 = ttk.Radiobutton(sub_win, value="temtetsu", variable=self.detection_ofs["link_var"], text='テムテム対戦データベース')
-        ref_bt = Button(sub_win, text="保存", command=lambda: save_setting_init([str(self.detection_ofs["ofst_x"]), str(self.detection_ofs["ofst_y"] ), "True" if self.detection_ofs["dump_flag"].get() else "False", self.detection_ofs["link_var"].get()]))
-        tmp_text0.grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
-        rdb0.grid(column=2, row=0)
-        rdb1.grid(column=4, row=0)
+        rdb0 = ttk.Radiobutton(sub_win, value="official", variable=self.link_var, text='公式Wiki')
+        rdb1 = ttk.Radiobutton(sub_win, value="temtetsu", variable=self.link_var, text='テムテム対戦データベース')
         
-        ref_bt.grid(column=0, row=10,columnspan=6, sticky=E+W, padx=4, pady=4 )
+        tmp_text0.grid(column=0, row=0, rowspan=2,sticky=W, padx=4, pady=4)
+        rdb0.grid(column=1, row=0, columnspan=2, sticky=W, padx=4)
+        rdb1.grid(column=1, row=1, columnspan=2, sticky=W, padx=4)
+        
+        
+        # tuning for 
+        tmp_void0 = ttk.Label(sub_win, text=" ")
+        tmp_text00 = ttk.Label(sub_win, text="Tem-PAT 表示位置修正")
+        tmp_text1 = ttk.Label(sub_win, text="左右方向\n（左 : -100 ~ 100 : 右）")
+        tmp_text2 = ttk.Label(sub_win, text="上下方向\n（上 : -100 ~ 100 : 下）")
+        tmp_text3 = ttk.Label(sub_win, text="pixel")
+        tmp_text4 = ttk.Label(sub_win, text="pixel")
+        tb1 = ttk.Entry(sub_win, width=10)
+        tb2 = ttk.Entry(sub_win,width=10)
+        tb1.delete(0, END)
+        tb2.delete(0, END)
+        tb1.insert(END, str(self.config_data["general"]["show_ofst_x"]))
+        tb2.insert(END, str(self.config_data["general"]["show_ofst_y"]))
+        ref_bt = Button(sub_win, text="保存", command=lambda: self.update_config_file(
+            "general",
+            ["link", "show_ofst_x", "show_ofst_y"],
+            [self.link_var.get(), self.is_num(tb1.get()), self.is_num(tb2.get())])
+            )
+        tmp_void0.grid(column=0, row=2, columnspan=3, sticky=E+W)
+        tmp_text00.grid(column=0, row=3, columnspan=3, sticky=W)
+        tmp_text1.grid(column=0, row=4, sticky=N+S)
+        tb1.grid(column=1, row=4, sticky=W)
+        tmp_text3.grid(column=2, row=4, sticky=W)
+        
+        tmp_text2.grid(column=0, row=5, sticky=N+S)
+        tb2.grid(column=1, row=5, sticky=W)
+        tmp_text4.grid(column=2, row=5, sticky=W)
+        ref_bt.grid(column=0, row=6, columnspan=3, sticky=E+W, padx=4, pady=4 )
+
 
         
     def show_tem_face_window(self, left_flag=True, idx=0):

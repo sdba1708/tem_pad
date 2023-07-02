@@ -1,0 +1,10 @@
+det_win:
+  dump: false
+  ofst_x: 0
+  ofst_y: 0
+general:
+  height: 930
+  link: temtetsu
+  show_ofst_x: 0
+  show_ofst_y: 0
+  width: 1600

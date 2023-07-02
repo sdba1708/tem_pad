@@ -106,6 +106,8 @@ def detect_tem(src_img,  ofs_x = 0, ofs_y = 0, dump_region=True, left_flag=False
     return tem_list
 
 
+
+
 def syn_tech_img(tech_dict, tech_name):
     
     out_img = None
@@ -139,7 +141,6 @@ def syn_tech_img(tech_dict, tech_name):
     return back_img
 
 def gen_tech_imgs(tech_list):
-    
     
     if len(tech_list) < 1:
         return None
