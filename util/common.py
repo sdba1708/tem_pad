@@ -4,7 +4,7 @@ import ctypes
 import yaml
 
 
-def get_app_rect(width = 1600, height = 930): # WxH of app window
+def get_app_rect(width = 1600, height = 930, ofst_x = 0, ofst_y = 0): # WxH of app window
     tem_window = win32gui.FindWindow(None, 'Temtem')
     if tem_window == 0:
         return None, None
@@ -34,7 +34,7 @@ def get_app_rect(width = 1600, height = 930): # WxH of app window
         tmp_diff = tmp_height - height
         out_bottom -= tmp_diff
     
-    return tem_window, [out_left, out_right, out_top, out_bottom]
+    return tem_window, [out_left + ofst_x, out_right + ofst_x, out_top + ofst_y, out_bottom + ofst_y]
 
 def get_config_data(yaml_path):
     config_data = None

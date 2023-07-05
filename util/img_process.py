@@ -105,8 +105,48 @@ def detect_tem(src_img,  ofs_x = 0, ofs_y = 0, dump_region=True, left_flag=False
 
     return tem_list
 
+def IsPBWindow(image, mask):
+    # ハードコーディング
+
+    acc = 0.8   # maskと8割以上一致したらPB画面と判定
+    
+    
+    mask_sum = mask.sum(axis=0).sum(axis=0)
+    in_sum = image.sum(axis=0).sum(axis=0)   
+    if in_sum > (image.shape[0] * image.shape[1]) // 2 :  # 画面の半分以上が明るい場合対象外
+        #print("in_sum : ", in_sum, ", thresh : ",  (image.shape[0] * image.shape[1]) // 2)
+        return False
+        
+    masked_img = mask * image
+    masked_sum = masked_img.sum(axis=0).sum(axis=0)
+    
+    if masked_sum >= mask_sum * acc:
+        return True
+    #print("masked_sum : ", masked_sum, ", mask_sum * acc : ", mask_sum * acc)
+    
+    return False
+
+def to_binary(src):
+    # input : array(h, w, 3)
+    # output : array(h, w) [binary]
+    th=230
+    bin_img = np.sum(src, axis=2) # 3ch -> 1ch
+    bin_img = np.where(bin_img > th * 3, 1, 0)
+    return bin_img
 
 
+def expand_img(src):
+    # input : array(h, w)
+    # output : array(h, w)
+    h, w = src.shape
+    out_img = np.zeros_like(src)
+    exp_src = np.pad(src, [(1, 1), (1, 1)], "constant")
+    for j in range(3):
+        for i in range(3):
+            out_img += exp_src[j:h+j, i:w+i]
+    out_img = np.clip(out_img, 0, 1)
+    return out_img
+    
 
 def syn_tech_img(tech_dict, tech_name):
     

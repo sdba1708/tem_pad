@@ -11,6 +11,7 @@ from PIL import Image, ImageTk, ImageGrab
 import numpy as np
 import os
 import win32gui
+import win32con
 import time
 import pandas as pd
 import cv2
@@ -18,7 +19,7 @@ import webbrowser
 import threading
 import yaml
 # personal
-from util.img_process import detect_tem, gen_tech_imgs, load_icon
+from util.img_process import detect_tem, gen_tech_imgs, load_icon, IsPBWindow, expand_img, to_binary
 from util.data_process import data_processor, get_setting_init, save_setting_init
 from util.common import get_app_rect, get_config_data, save_config_data
 
@@ -37,14 +38,12 @@ class Window():
         
         self.yaml_path = os.path.join('data', 'config.yaml')
         self.config_data = get_config_data(self.yaml_path)
-        #self.detection_ofs = {
-        #    "ofst_x" : tmp_set_data[0],
-        #    "ofst_y" : tmp_set_data[1],
-        #    "dump_flag" : BooleanVar(value=tmp_set_data[2]),
-        #    "link_var" : StringVar(value=tmp_set_data[3])
-        #}
+      
         self.detection_dump_flag = BooleanVar(value=self.config_data['det_win']['dump'])
         self.link_var = StringVar(value=self.config_data['general']['link'])
+        self.auto_detection_var = BooleanVar(value=self.config_data['general']['auto_det'])
+        if self.auto_detection_var.get():
+            self.root.title('Tem Pick Assist Tool - 検出中')
         self.url_setting={
             "official" : "https://temtem.wiki.gg/wiki",
             "temtetsu" : "https://temtetsu.pages.dev/species"
@@ -55,8 +54,10 @@ class Window():
         self.root.config(menu=self.men_win)
         menu_set = Menu(self.root, tearoff=0)
         self.men_win.add_cascade(label="オプション", menu=menu_set)
+        menu_set.add_checkbutton(label='自動検出ON', command= lambda:self.autodet_change("general", ["auto_det"], [self.auto_detection_var.get()]) ,variable=self.auto_detection_var)
         menu_set.add_command(label='検出枠位置調整', command=lambda:self.show_tuning_window())
-        menu_set.add_command(label='設定', command=lambda:self.show_setting_window()) 
+        menu_set.add_command(label='設定', command=lambda:self.show_setting_window())
+        
         #menu_set.add_separator() 
         
         # 透過
@@ -127,6 +128,7 @@ class Window():
             "type1" : [],
             "type2" : []
         }
+        
 
         for i in range(8):
             # set small frames
@@ -169,11 +171,18 @@ class Window():
         self.right_obj['face'].append(ttk.Button(self.right_small_frame[6], image=self.right_imgs["face"][6], command =lambda:self.show_tem_face_window(left_flag=False, idx=6)))
         self.right_obj['face'].append(ttk.Button(self.right_small_frame[7], image=self.right_imgs["face"][7], command =lambda:self.show_tem_face_window(left_flag=False, idx=7)))   
 
+
+        self.left_frame_for_det_button = ttk.Frame(self.left_base_frame)
+        self.flag_left_run_detection_var = BooleanVar(value=True)
+        self.cb_left_run_detection = Checkbutton(self.left_frame_for_det_button, variable=self.flag_left_run_detection_var, text='認識')
+        self.right_frame_for_det_button = ttk.Frame(self.right_base_frame)
+        self.flag_right_run_detection_var = BooleanVar(value=True)
+        self.cb_right_run_detection = Checkbutton(self.right_frame_for_det_button, variable=self.flag_right_run_detection_var, text='認識')
       
         self.left_button = ttk.Button(
-            self.left_base_frame,
-            text='認識',
-            command=lambda: self.button_update_window(left_flag=True)
+            self.left_frame_for_det_button,
+            text='開始',
+            command=lambda: self.button_update_window(left_flag=self.flag_left_run_detection_var.get(), right_flag = self.flag_right_run_detection_var.get())
             )
         
         self.left_detail_button = ttk.Button(
@@ -189,9 +198,9 @@ class Window():
             )
 
         self.right_button = ttk.Button(
-            self.right_base_frame,
-            text='認識',
-            command=lambda: self.button_update_window(left_flag=False)
+            self.right_frame_for_det_button,
+            text='開始',
+            command=lambda: self.button_update_window(left_flag=self.flag_left_run_detection_var.get(), right_flag = self.flag_right_run_detection_var.get())
             )
         
         self.right_detail_button = ttk.Button(
@@ -209,7 +218,17 @@ class Window():
 
         self.left_base_frame.pack(side=LEFT)
         self.trans_base_frame.pack(side=LEFT)
-        self.right_base_frame.pack(side=LEFT)       
+        self.right_base_frame.pack(side=LEFT)  
+        
+        # 一番上に認識関連置く
+        # left
+        self.left_frame_for_det_button.pack(side=TOP)
+        self.cb_left_run_detection.pack(side=LEFT)
+        self.left_button.pack(side=RIGHT)
+        self.right_frame_for_det_button.pack(side=TOP)
+        self.cb_right_run_detection.pack(side=LEFT)
+        self.right_button.pack(side=RIGHT)
+             
 
         for i in range(8):
             self.left_small_frame[i].grid_propagate(False)
@@ -225,16 +244,13 @@ class Window():
             self.right_obj['type1'][i].grid(column=1, row=1)
             self.right_obj['type2'][i].grid(column=1, row=2)
             
-        self.left_button.pack(side=TOP)
+        #self.left_button.pack(side=TOP)
         self.left_detail_button.pack(side=TOP)
         self.left_stats_button.pack(side=TOP)
-        self.right_button.pack(side=TOP)
+        #self.right_button.pack(side=TOP)
         self.right_detail_button.pack(side=TOP)
         self.right_stats_button.pack(side=TOP)
-        self.res_win_obj = [
-            None,
-            None
-        ]
+        
         
         class subwindow():
             def __init__(self):
@@ -252,8 +268,11 @@ class Window():
                 ]
         self.res_sub = subwindow()
         self.stats_sub = subwindow()
-                
-       
+        self.battle_mask = np.load(os.path.join("data", "mask_for_battle.npy"))
+        self.pickban_mask = np.load(os.path.join("data", "mask_for_pickban.npy"))
+        self.pb_region = [630, 990, 60, 200]    # left, right, top, bottom
+        self.flag_not_detected_yet = True
+        self.is_battle_cnt = 0
         self.timeEvent()
         
 
@@ -265,10 +284,41 @@ class Window():
     #
     def update(self):
         # update window pos
-        tem_window, rect = get_app_rect(width=1600, height=930)       # window, [left, right, top, bottom]
+        tem_window, rect = get_app_rect(width=1600, height=930, ofst_x = self.config_data["general"]["show_ofst_x"], ofst_y = self.config_data["general"]["show_ofst_y"])       # window, [left, right, top, bottom]
         if rect is not None:
             #print(rect)
-            self.root.geometry("+"+str(rect[0]- (108 - self.config_data["general"]["show_ofst_x"]))+"+"+str(rect[2]-(20 - self.config_data["general"]["show_ofst_y"])))
+            self.root.geometry("+"+str(rect[0]- 108)+"+"+str(rect[2] - 20))
+            
+            # 以降 自動認識部
+            if self.auto_detection_var.get() :
+                bb = [
+                    rect[0] + self.pb_region[0],    # left
+                    rect[2] + self.pb_region[2],    # top
+                    rect[0] + self.pb_region[1],    # right
+                    rect[2] + self.pb_region[3]     # bottm
+                ]
+                #bb = [rect[0], rect[2], rect[1], rect[3]]
+                #win32gui.SetWindowPos(tem_window,win32con.HWND_TOP,0,0,0,0,win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+                scs = expand_img(to_binary(np.array(ImageGrab.grab(bbox=bb))))
+                battle_flag = IsPBWindow(scs, self.battle_mask)
+                pickban_flag = False
+                # 連続5回battle_flagがTrueだったら対戦画面へ移行と判断
+                if battle_flag:
+                    self.is_battle_cnt += 1     
+                #if battle_flag and (self.flag_prev_battle is False):    # 対戦画面への移り変わり
+                if self.is_battle_cnt > 4:
+                    pickban_flag = IsPBWindow(scs, self.pickban_mask)
+                    #cv2.imwrite("dump_pickban_input.png", scs)
+                    if pickban_flag and self.flag_not_detected_yet:     # pickbanフラグがTrueでなおかつまだ検出が動いていない場合だけ検出する
+                        # ここで検出する
+                        self.button_update_window(left_flag=self.flag_left_run_detection_var.get(), right_flag = self.flag_right_run_detection_var.get(), called_auto=True)
+                        self.flag_not_detected_yet = False
+                    if battle_flag is False:  # 連続して5回以上battleだったのに現フレームはbattle_flag=False -> 対戦画面から他画面への移り変わり
+                        self.flag_not_detected_yet = True
+                        self.is_battle_cnt = 0
+                elif (self.is_battle_cnt <= 4) and (battle_flag is False):
+                    self.is_battle_cnt=0
+                    
             #print(rect[0]-100)
             #if self.auto_cap_mod:
             #    # capture window
@@ -279,7 +329,16 @@ class Window():
             #    pb_flag = IsPBWinodow(src)
             #    if self.prev_pb_flag is False and pb_flag is True:
             #        self.auto_update_window(scs)
-                
+     
+    def autodet_change(self, keyname, keylist, keyvalue):
+        # change 
+        if keyvalue[0]:
+            self.root.title('Tem Pick Assist Tool - 検出中')
+        else:
+            self.root.title('Tem Pick Assist Tool')
+        self.update_config_file(keyname, keylist, keyvalue)
+        
+        
     def mouse_wheel_stats(self, event):
         self.stats_window._canvas.yview_scroll(int(-1*(event.delta/120)), "units") 
     def mouse_wheel_type(self, event):
@@ -317,8 +376,11 @@ class Window():
         else:
             return int(s)
         
-    def button_update_window(self, left_flag=False):
-    
+    def button_update_window(self, left_flag=False, right_flag=False, called_auto=False):
+        
+        if (called_auto is False) and self.auto_detection_var.get():
+            return
+        
         # get screenshot
         scs = self.get_screenshot(dummy=DEBUG_FLAG)
         
@@ -328,17 +390,17 @@ class Window():
         tmp_flag = self.detection_dump_flag.get()
 
         # もしleft, right両方ともまだ未認識だったらどちらも認識を走らせる
-        run_left = left_flag
-        run_right = False if left_flag else True
-        if self.left_obj["name"][0].cget("text") == "None":
-            run_left = True
-        if self.right_obj["name"][0].cget("text") == "None":
-            run_right = True
+        #run_left = left_flag
+        #run_right = False if left_flag else True
+        #if self.left_obj["name"][0].cget("text") == "None":
+        #    run_left = True
+        #if self.right_obj["name"][0].cget("text") == "None":
+        #    run_right = True
 
         image_dir = ".\\data\\port"
         # update image
         link_list = [[], []]
-        if run_left:
+        if left_flag:
             # get tem list
             tem_list = detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = True)
   
@@ -393,9 +455,12 @@ class Window():
                 self.close_stats_win(0)
                 self.show_stats(left_flag=True)
                 
+            # 左側は1度認識走ったらチェックボックス外す
+            self.flag_left_run_detection_var.set(False)
+                
             
 
-        if run_right:  # right side
+        if right_flag:  # right side
             # get tem list
             tem_list = detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = False)
             for i in range(len(tem_list)):
