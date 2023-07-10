@@ -5,6 +5,7 @@ import os
 import pickle
 import time
 from PIL import Image, ImageDraw, ImageFont
+from operator import itemgetter
 
 def extract_tem_region(src_img, ofs_x = 0, ofs_y = 0, dump_region=True, left_flag=False):
     img_list = []
@@ -103,7 +104,7 @@ def detect_tem(src_img,  ofs_x = 0, ofs_y = 0, dump_region=True, left_flag=False
     # run detection
     tem_list = run_img_detection(img_list)
 
-    return tem_list
+    return tem_list, img_list
 
 def IsPBWindow(image, mask):
     # ハードコーディング
@@ -193,6 +194,50 @@ def gen_tech_imgs(tech_list):
         img_list.append(syn_tech_img(tech_dict, tmp_tech))
         
     return img_list
+
+def re_img_detection(tem_face_img):
+    reg_path=".\\data\\regs2.bin"
+    luma_path=".\\data\\lumas2.bin"
+    
+    with open(reg_path, 'rb') as p:
+        reg_data = pickle.load(p)
+    with open(luma_path, 'rb') as p:
+        luma_data = pickle.load(p)
+
+    loop_num = len(reg_data)
+    detector = cv2.ORB_create(nfeatures=100, fastThreshold=0, edgeThreshold=0)
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    min_dist = 1000000000
+    max_idx = -100
+    
+    tem_list = []
+    tmp_list = []
+
+    _, tgt_des = detector.detectAndCompute(cv2.resize(tem_face_img, (200,200)), None)
+
+    for i in range(loop_num):
+        # reg detection
+        reg_des = reg_data[i]
+        luma_des = luma_data[i]
+
+        matches = bf.match(tgt_des, reg_des)
+        dist = [m.distance for m in matches]
+        reg_dist = sum(dist) / len(dist)
+        matches = bf.match(tgt_des, luma_des)
+        dist = [m.distance for m in matches]
+        luma_dist = sum(dist) / len(dist)
+                
+        dist = min(reg_dist, luma_dist)
+        tmp_list.append([i, dist])
+        #if min_dist > dist:
+        #    min_dist = dist
+        #    max_idx = i
+        
+    tmp_list.sort(key=itemgetter(1))
+    tem_list = [tmp_list[:5][i][0] for i in range(5)]   # 上位5種を取り出す
+    
+    return tem_list
+    
 
 def load_icon():
     data = "R0lGODlhAAHgAOf/ACYnJScoJisnJicpJyEqNCUqMScqLCMrNikrKCQsNyosKiwt\

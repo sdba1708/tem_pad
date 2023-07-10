@@ -4,6 +4,7 @@ import ctypes
 import yaml
 
 
+
 def get_app_rect(width = 1600, height = 930, ofst_x = 0, ofst_y = 0): # WxH of app window
     tem_window = win32gui.FindWindow(None, 'Temtem')
     if tem_window == 0:
@@ -49,5 +50,13 @@ def get_config_data(yaml_path):
 def save_config_data(yaml_path, config_data):
     with open(yaml_path, 'w') as yml:
         yaml.dump(config_data, yml, default_flow_style=False)
+        
+def is_num(s):
+    try:
+        float(s)
+    except ValueError:
+        return 0
+    else:
+        return int(s)
     
     

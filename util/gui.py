@@ -19,11 +19,13 @@ import webbrowser
 import threading
 import yaml
 # personal
-from util.img_process import detect_tem, gen_tech_imgs, load_icon, IsPBWindow, expand_img, to_binary
+from util.img_process import detect_tem, gen_tech_imgs, load_icon, IsPBWindow, expand_img, to_binary, re_img_detection, extract_tem_region
 from util.data_process import data_processor, get_setting_init, save_setting_init
-from util.common import get_app_rect, get_config_data, save_config_data
+from util.common import get_app_rect, get_config_data, save_config_data, is_num
 
 DEBUG_FLAG=False
+
+BASE_DIR=os.getcwd()
 
 class Window():
     def __init__(self):
@@ -36,7 +38,7 @@ class Window():
         #icon = PhotoImage(file="data\\icon.png")
         self.root.iconphoto(True, PhotoImage(data=load_icon()))
         
-        self.yaml_path = os.path.join('data', 'config.yaml')
+        self.yaml_path = os.path.join(BASE_DIR, 'data', 'config.yaml')
         self.config_data = get_config_data(self.yaml_path)
       
         self.detection_dump_flag = BooleanVar(value=self.config_data['det_win']['dump'])
@@ -77,7 +79,7 @@ class Window():
             ex) tem_db.iat[0, 1] = "Mimit", tem_db.iat[0, 2] = "Digital"
         
         '''
-        csv_file=".\\data\\data.csv"
+        csv_file=os.path.join(BASE_DIR, "data", "data.csv")
         self.tem_db = pd.read_csv(csv_file, encoding='utf-8', delimiter=',', header=None)
 
         # label
@@ -86,21 +88,22 @@ class Window():
         self.right_small_frame = []
         self.dummy_image = ImageTk.PhotoImage(Image.fromarray(np.zeros((64, 64, 3)), mode="RGB"))
         self.dummy_type = ImageTk.PhotoImage(Image.fromarray(np.zeros((32, 24, 4)), mode="RGBA"))
-        self.left_imgs = {
+        self.buf_imgs = [
+            {
             "face" : [],
             "name" : [],
             "type1" : [],
             "type2" : [],
             "stats" : []
-        }
-        self.right_imgs = {
+        },
+        {
             "face" : [],
             "name" : [],
             "type1" : [],
             "type2" : [],
             "stats" : []
-        }
-        type_dir = ".\\data\\icon"
+        }]
+        type_dir = os.path.join(BASE_DIR, "data", "icon")#".\\data\\icon"
         self.type_imgs = { 
             "Neutral"   : ImageTk.PhotoImage(Image.open(os.path.join(type_dir, "Neutral.png")).resize((24, 32))),
             "Wind"      : ImageTk.PhotoImage(Image.open(os.path.join(type_dir, "Wind.png")).resize((24, 32))),
@@ -116,18 +119,18 @@ class Window():
             "Toxic"     : ImageTk.PhotoImage(Image.open(os.path.join(type_dir, "Toxic.png")).resize((24, 32))),
             "Dummy"     : self.dummy_type
         }
-        self.left_obj = {
+        self.buf_obj = [{
             "name" : [],
             "face" : [],
             "type1" : [],
             "type2" : []
-        }
-        self.right_obj = {
+        },
+        {
             "name" : [],
             "face" : [],
             "type1" : [],
             "type2" : []
-        }
+        }]
         
 
         for i in range(8):
@@ -135,42 +138,34 @@ class Window():
             self.left_small_frame.append(ttk.Frame(self.left_base_frame, width=100, height=100, relief="groove"))
             self.right_small_frame.append(ttk.Frame(self.right_base_frame, width=100, height=100, relief="groove"))
             # set dummy images
-            self.left_imgs["face"].append(self.dummy_image)
-            self.left_imgs["name"].append("None")
-            self.left_imgs["type1"].append("Dummy")
-            self.left_imgs["type2"].append("Dummy")
-            self.left_imgs["stats"].append([])
-            self.right_imgs["face"].append(self.dummy_image)
-            self.right_imgs["name"].append("None")
-            self.right_imgs["type1"].append("Dummy")
-            self.right_imgs["type2"].append("Dummy")
-            self.right_imgs["stats"].append([])
+            self.buf_imgs[0]["face"].append(self.dummy_image)
+            self.buf_imgs[0]["name"].append("None")
+            self.buf_imgs[0]["type1"].append("Dummy")
+            self.buf_imgs[0]["type2"].append("Dummy")
+            self.buf_imgs[0]["stats"].append([])
+            self.buf_imgs[1]["face"].append(self.dummy_image)
+            self.buf_imgs[1]["name"].append("None")
+            self.buf_imgs[1]["type1"].append("Dummy")
+            self.buf_imgs[1]["type2"].append("Dummy")
+            self.buf_imgs[1]["stats"].append([])
             # set objects
-            self.left_obj['name'].append(ttk.Label(self.left_small_frame[i], text="None", foreground="blue", cursor="hand1"))
-            self.left_obj['type1'].append(ttk.Label(self.left_small_frame[i], image=self.type_imgs["Dummy"]))
-            self.left_obj['type2'].append(ttk.Label(self.left_small_frame[i], image=self.type_imgs["Dummy"]))
-            self.right_obj['name'].append(ttk.Label(self.right_small_frame[i], text="None", foreground="blue", cursor="hand1"))
-            self.right_obj['type1'].append(ttk.Label(self.right_small_frame[i], image=self.type_imgs["Dummy"]))
-            self.right_obj['type2'].append(ttk.Label(self.right_small_frame[i], image=self.type_imgs["Dummy"]))
+            self.buf_obj[0]['name'].append(ttk.Label(self.left_small_frame[i], text="None", foreground="blue", cursor="hand1"))
+            self.buf_obj[0]['type1'].append(ttk.Label(self.left_small_frame[i], image=self.type_imgs["Dummy"]))
+            self.buf_obj[0]['type2'].append(ttk.Label(self.left_small_frame[i], image=self.type_imgs["Dummy"]))
+            self.buf_obj[1]['name'].append(ttk.Label(self.right_small_frame[i], text="None", foreground="blue", cursor="hand1"))
+            self.buf_obj[1]['type1'].append(ttk.Label(self.right_small_frame[i], image=self.type_imgs["Dummy"]))
+            self.buf_obj[1]['type2'].append(ttk.Label(self.right_small_frame[i], image=self.type_imgs["Dummy"]))
+            
+            #self.buf_obj[0]['face'].append(ttk.Button(self.left_small_frame[i], image=self.buf_imgs[0]["face"][i], command =lambda c=i:self.show_tem_face_window(left_flag=True, idx=c)))
+            #self.buf_obj[1]['face'].append(ttk.Button(self.right_small_frame[i], image=self.buf_imgs[1]["face"][i], command =lambda c=i:self.show_tem_face_window(left_flag=False, idx=c)))
+            self.buf_obj[0]['face'].append(Button(self.left_small_frame[i], image=self.buf_imgs[0]["face"][i], bg='white', command =lambda c=i:self.change_tem_face_bg(lr_idx=0, obj_idx=c)))
+            self.buf_obj[1]['face'].append(Button(self.right_small_frame[i], image=self.buf_imgs[1]["face"][i], bg='white', command =lambda c=i:self.change_tem_face_bg(lr_idx=1, obj_idx=c)))
             
         
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[0], image=self.left_imgs["face"][0], command =lambda:self.show_tem_face_window(left_flag=True, idx=0)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[1], image=self.left_imgs["face"][1], command =lambda:self.show_tem_face_window(left_flag=True, idx=1)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[2], image=self.left_imgs["face"][2], command =lambda:self.show_tem_face_window(left_flag=True, idx=2)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[3], image=self.left_imgs["face"][3], command =lambda:self.show_tem_face_window(left_flag=True, idx=3)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[4], image=self.left_imgs["face"][4], command =lambda:self.show_tem_face_window(left_flag=True, idx=4)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[5], image=self.left_imgs["face"][5], command =lambda:self.show_tem_face_window(left_flag=True, idx=5)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[6], image=self.left_imgs["face"][6], command =lambda:self.show_tem_face_window(left_flag=True, idx=6)))
-        self.left_obj['face'].append(ttk.Button(self.left_small_frame[7], image=self.left_imgs["face"][7], command =lambda:self.show_tem_face_window(left_flag=True, idx=7)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[0], image=self.right_imgs["face"][0], command =lambda:self.show_tem_face_window(left_flag=False, idx=0)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[1], image=self.right_imgs["face"][1], command =lambda:self.show_tem_face_window(left_flag=False, idx=1)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[2], image=self.right_imgs["face"][2], command =lambda:self.show_tem_face_window(left_flag=False, idx=2)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[3], image=self.right_imgs["face"][3], command =lambda:self.show_tem_face_window(left_flag=False, idx=3)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[4], image=self.right_imgs["face"][4], command =lambda:self.show_tem_face_window(left_flag=False, idx=4)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[5], image=self.right_imgs["face"][5], command =lambda:self.show_tem_face_window(left_flag=False, idx=5)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[6], image=self.right_imgs["face"][6], command =lambda:self.show_tem_face_window(left_flag=False, idx=6)))
-        self.right_obj['face'].append(ttk.Button(self.right_small_frame[7], image=self.right_imgs["face"][7], command =lambda:self.show_tem_face_window(left_flag=False, idx=7)))   
-
+        self.list_imgs_for_det = [        # Image list. use for tem face detection
+            None,
+            None
+        ]
 
         self.left_frame_for_det_button = ttk.Frame(self.left_base_frame)
         self.flag_left_run_detection_var = BooleanVar(value=True)
@@ -190,7 +185,6 @@ class Window():
             text='耐性一覧',
             command=lambda: self.show_type_res(left_flag=True)
             )
-        
         self.left_stats_button = ttk.Button(
             self.left_base_frame,
             text='基本能力値一覧',
@@ -235,14 +229,14 @@ class Window():
             self.right_small_frame[i].grid_propagate(False)
             self.left_small_frame[i].pack(side=TOP)
             self.right_small_frame[i].pack(side=TOP)
-            self.left_obj['name'][i].grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
-            self.left_obj['face'][i].grid(column=0, row=1, rowspan=2, sticky=N+S)
-            self.left_obj['type1'][i].grid(column=1, row=1)
-            self.left_obj['type2'][i].grid(column=1, row=2)
-            self.right_obj['name'][i].grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
-            self.right_obj['face'][i].grid(column=0, row=1, rowspan=2, sticky=N+S)
-            self.right_obj['type1'][i].grid(column=1, row=1)
-            self.right_obj['type2'][i].grid(column=1, row=2)
+            self.buf_obj[0]['name'][i].grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
+            self.buf_obj[0]['face'][i].grid(column=0, row=1, rowspan=2, sticky=N+S)
+            self.buf_obj[0]['type1'][i].grid(column=1, row=1)
+            self.buf_obj[0]['type2'][i].grid(column=1, row=2)
+            self.buf_obj[1]['name'][i].grid(column=0, row=0, columnspan=2, sticky=E+W, padx=4, pady=4)
+            self.buf_obj[1]['face'][i].grid(column=0, row=1, rowspan=2, sticky=N+S)
+            self.buf_obj[1]['type1'][i].grid(column=1, row=1)
+            self.buf_obj[1]['type2'][i].grid(column=1, row=2)
             
         #self.left_button.pack(side=TOP)
         self.left_detail_button.pack(side=TOP)
@@ -273,6 +267,8 @@ class Window():
         self.pb_region = [630, 990, 60, 200]    # left, right, top, bottom
         self.flag_not_detected_yet = True
         self.is_battle_cnt = 0
+        self.list_re_det = []
+        self.selected_tem = None
         self.timeEvent()
         
 
@@ -313,22 +309,23 @@ class Window():
                         # ここで検出する
                         self.button_update_window(left_flag=self.flag_left_run_detection_var.get(), right_flag = self.flag_right_run_detection_var.get(), called_auto=True)
                         self.flag_not_detected_yet = False
+                        
+                    '''
+                    if not self.flag_not_detected_yet:  # もしまだbattle画面でかつflag_not_detected_yetがFalse -> 検出は終わっているがまだ選出画面
+                        # ここでテムがピック/バンされたかどうかを判定する
+                        fullbb = [rect[0], rect[2], rect[1], rect[3]]
+                        fullscs = np.array(ImageGrab.grab(bbox=fullbb))
+                        left_list = extract_tem_region(fullscs, self.config_data["det_win"]["ofst_x"], self.config_data["det_win"]["ofst_y"], False, True)
+                        right_list = extract_tem_region(fullscs, self.config_data["det_win"]["ofst_x"], self.config_data["det_win"]["ofst_y"], False, False)
+                        self.check_pb_done(left_list, lr_idx=0)
+                        self.check_pb_done(right_list, lr_idx=1)
+                    '''    
                     if battle_flag is False:  # 連続して5回以上battleだったのに現フレームはbattle_flag=False -> 対戦画面から他画面への移り変わり
                         self.flag_not_detected_yet = True
                         self.is_battle_cnt = 0
                 elif (self.is_battle_cnt <= 4) and (battle_flag is False):
                     self.is_battle_cnt=0
                     
-            #print(rect[0]-100)
-            #if self.auto_cap_mod:
-            #    # capture window
-            #    bb = [rect.left, rect.top, rect.right, rect.bottom]
-            #    win32gui.SetForegroundWindow(tem_window)
-            #    time.sleep(0.1)
-            #    scs = ImageGrab.grab(bbox=bb)
-            #    pb_flag = IsPBWinodow(src)
-            #    if self.prev_pb_flag is False and pb_flag is True:
-            #        self.auto_update_window(scs)
      
     def autodet_change(self, keyname, keylist, keyvalue):
         # change 
@@ -338,11 +335,21 @@ class Window():
             self.root.title('Tem Pick Assist Tool')
         self.update_config_file(keyname, keylist, keyvalue)
         
+    def check_pb_done(self, img_list, lr_idx):
+        for i in range(len(img_list)):
+            diff = cv2.cvtColor(img_list[i], cv2.COLOR_BGR2RGB) - self.list_imgs_for_det[lr_idx][i]
+            diff_abs = abs(diff).sum()
+            if diff_abs > 0:
+                diff_B = diff[:,:,0].sum()
+                diff_G = diff[:,:,1].sum()
+                diff_R = diff[:,:,2].sum()
+                print("lr_idx : ", lr_idx, ", idx : ", i, ", diff_R : ", diff_R, ", diff_G : ", diff_G, ", diff_B : ", diff_B)
+                if diff_R >= 0 and diff_B < 0 and diff_G < 0:   # 画面全体が赤っぽくなってたらban
+                    self.buf_obj[lr_idx]["face"][i].config(bg="tomato")
+                else:   # そうじゃなかったらピック
+                    self.buf_obj[lr_idx]["face"][i].config(bg="turquoise1")
+                
         
-    def mouse_wheel_stats(self, event):
-        self.stats_window._canvas.yview_scroll(int(-1*(event.delta/120)), "units") 
-    def mouse_wheel_type(self, event):
-        self.type_window._canvas.yview_scroll(int(-1*(event.delta/120)), "units") 
 
     def run(self):
         self.root.mainloop()
@@ -350,7 +357,7 @@ class Window():
     def get_screenshot(self, dummy=False):
         
         if dummy:
-            scs = cv2.imread("dump_screenshot.png")
+            scs = cv2.imread(os.path.join(BASE_DIR, "dump_screenshot.png"))
             return scs
 
         tem_window, rect = get_app_rect(width=1600, height=930)
@@ -361,20 +368,51 @@ class Window():
         win32gui.SetForegroundWindow(tem_window)
         time.sleep(0.1)
         scs = ImageGrab.grab(bbox=bb)
-        # dump
-        #scs.save("dump_screenshot.png")
+
         return np.array(scs)
     
     def link_click(self, url):
         webbrowser.open_new(url)
 
-    def is_num(self, s):
-        try:
-            float(s)
-        except ValueError:
-            return 0
+    def update_whole_data(self, lr_idx, tem_idx, tgt_obj_idx, tem_face_img):
+        
+        image_dir = os.path.join(BASE_DIR, "data", "port") #.\\data\\port"
+        image_name = os.path.join(image_dir, str(tem_idx).zfill(5)+".png")
+        i = tgt_obj_idx
+        with Image.open(image_name) as im:
+            if im.size[0] != 64 and im.size[1] != 64:
+                self.buf_imgs[lr_idx]["face"][i] = ImageTk.PhotoImage(im.resize((64, 64)))
+            else:
+                self.buf_imgs[lr_idx]["face"][i] = ImageTk.PhotoImage(im)
+        self.buf_obj[lr_idx]['face'][i].config(image=(self.buf_imgs[lr_idx]["face"][i]), bg='white')
+        # update type
+        tmp_type1 = self.tem_db.iat[tem_idx, 3]
+        self.buf_imgs[lr_idx]["type1"][i] = tmp_type1
+        self.buf_obj[lr_idx]["type1"][i].config(image=self.type_imgs[tmp_type1])
+
+        tmp_type2 = self.tem_db.iat[tem_idx, 4]
+        if tmp_type2 != "None":
+            self.buf_imgs[lr_idx]["type2"][i] = tmp_type2
+            self.buf_obj[lr_idx]["type2"][i].config(image=self.type_imgs[tmp_type2])
         else:
-            return int(s)
+            self.buf_imgs[lr_idx]["type2"][i] = "Dummy"
+            self.buf_obj[lr_idx]["type2"][i].config(image=self.type_imgs["Dummy"])
+                
+        tmp_name = self.tem_db.iat[tem_idx, 1]
+        tmp_name_jp = self.tem_db.iat[tem_idx, 2]
+        self.buf_imgs[lr_idx]["name"][i] = tmp_name
+        self.buf_obj[lr_idx]["name"][i].config(text=tmp_name_jp)
+        self.buf_imgs[lr_idx]["stats"][i] = [self.tem_db.iloc[tem_idx, 5], self.tem_db.iloc[tem_idx, 6], self.tem_db.iloc[tem_idx, 7], self.tem_db.iloc[tem_idx, 8], self.tem_db.iloc[tem_idx, 9], self.tem_db.iloc[tem_idx, 10], self.tem_db.iloc[tem_idx, 11]]
+        if self.link_var.get() == "official":
+            #link_list[lr_idx].append("https://temtem.wiki.gg/wiki/" + tmp_name)
+            tmp_link = "https://temtem.wiki.gg/wiki/" + tmp_name
+        else:
+            #link_list[lr_idx].append("https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_list[i], 0]))
+            tmp_link = "https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_idx, 0])
+
+        self.buf_obj[lr_idx]["name"][i].bind("<Button-1>",lambda e, c=tmp_link:self.link_click(c))
+        self.buf_obj[lr_idx]["face"][i].bind("<Button-3>", lambda e, c=i, lr=lr_idx, tfi=tem_face_img:self.run_re_detection(lr, tfi, idx=c))
+        
         
     def button_update_window(self, left_flag=False, right_flag=False, called_auto=False):
         
@@ -386,65 +424,17 @@ class Window():
         
         # get Entry data
         ofs_x = self.config_data["det_win"]["ofst_x"]
-        ofs_y = self.config_data["det_win"]["ofst_y"] #self.is_num(self.tb2.get())
+        ofs_y = self.config_data["det_win"]["ofst_y"] #is_num(self.tb2.get())
         tmp_flag = self.detection_dump_flag.get()
 
-        # もしleft, right両方ともまだ未認識だったらどちらも認識を走らせる
-        #run_left = left_flag
-        #run_right = False if left_flag else True
-        #if self.left_obj["name"][0].cget("text") == "None":
-        #    run_left = True
-        #if self.right_obj["name"][0].cget("text") == "None":
-        #    run_right = True
-
-        image_dir = ".\\data\\port"
         # update image
-        link_list = [[], []]
         if left_flag:
             # get tem list
-            tem_list = detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = True)
-  
+            tem_list, face_img_list = detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = True)
+            self.list_imgs_for_det[0] = face_img_list
+            # メインウィンドウに更新かける
             for i in range(len(tem_list)):
-                # update portrait
-                image_name = os.path.join(image_dir, str(tem_list[i]).zfill(5)+".png")
-                with Image.open(image_name) as im:
-                    if im.size[0] != 64 and im.size[1] != 64:
-                        self.left_imgs["face"][i] = ImageTk.PhotoImage(im.resize((64, 64)))
-                    else:
-                        self.left_imgs["face"][i] = ImageTk.PhotoImage(im)
-                    self.left_obj['face'][i].config(image=(self.left_imgs["face"][i]))
-                # update type
-                tmp_type1 = self.tem_db.iat[tem_list[i], 3]
-                self.left_imgs["type1"][i] = tmp_type1
-                self.left_obj["type1"][i].config(image=self.type_imgs[tmp_type1])
-
-                tmp_type2 = self.tem_db.iat[tem_list[i], 4]
-                if tmp_type2 != "None":
-                    self.left_imgs["type2"][i] = tmp_type2
-                    self.left_obj["type2"][i].config(image=self.type_imgs[tmp_type2])
-                else:
-                    self.left_imgs["type2"][i] = "Dummy"
-                    self.left_obj["type2"][i].config(image=self.type_imgs["Dummy"])
-                
-                tmp_name = self.tem_db.iat[tem_list[i], 1]
-                tmp_name_jp = self.tem_db.iat[tem_list[i], 2]
-                self.left_imgs["name"][i] = tmp_name
-                self.left_obj["name"][i].config(text=tmp_name_jp)
-                self.left_imgs["stats"][i] = [self.tem_db.iloc[tem_list[i], 5], self.tem_db.iloc[tem_list[i], 6], self.tem_db.iloc[tem_list[i], 7], self.tem_db.iloc[tem_list[i], 8], self.tem_db.iloc[tem_list[i], 9], self.tem_db.iloc[tem_list[i], 10], self.tem_db.iloc[tem_list[i], 11]]
-                if self.link_var.get() == "official":
-                    link_list[0].append("https://temtem.wiki.gg/wiki/" + tmp_name)
-                else:
-                    link_list[0].append("https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_list[i], 0]))
-
-            # doesn't work in for loop?????
-            self.left_obj["name"][0].bind("<Button-1>",lambda e:self.link_click(link_list[0][0]))
-            self.left_obj["name"][1].bind("<Button-1>",lambda e:self.link_click(link_list[0][1]))
-            self.left_obj["name"][2].bind("<Button-1>",lambda e:self.link_click(link_list[0][2]))
-            self.left_obj["name"][3].bind("<Button-1>",lambda e:self.link_click(link_list[0][3]))
-            self.left_obj["name"][4].bind("<Button-1>",lambda e:self.link_click(link_list[0][4]))
-            self.left_obj["name"][5].bind("<Button-1>",lambda e:self.link_click(link_list[0][5]))
-            self.left_obj["name"][6].bind("<Button-1>",lambda e:self.link_click(link_list[0][6]))
-            self.left_obj["name"][7].bind("<Button-1>",lambda e:self.link_click(link_list[0][7]))
+                self.update_whole_data(lr_idx=0, tem_idx = tem_list[i], tgt_obj_idx=i, tem_face_img=face_img_list[i])                
             
             # update sub windows if they are opend
             if self.res_sub.obj[0] is not None:
@@ -457,53 +447,17 @@ class Window():
                 
             # 左側は1度認識走ったらチェックボックス外す
             self.flag_left_run_detection_var.set(False)
-                
-            
+        else:   # 左側に検出かからない場合は背景色だけ元に戻す
+            for i in range(8):
+                self.buf_obj[1]["face"][i].config(bg="white")
 
         if right_flag:  # right side
             # get tem list
-            tem_list = detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = False)
+            tem_list, face_img_list= detect_tem(cv2.cvtColor(scs, cv2.COLOR_BGR2RGB),  ofs_x, ofs_y, tmp_flag, left_flag = False)
+            self.list_imgs_for_det[1] = face_img_list
             for i in range(len(tem_list)):
-                # update portrait
-                image_name = os.path.join(image_dir, str(tem_list[i]).zfill(5)+".png")
-                with Image.open(image_name) as im:
-                    if im.size[0] != 64 and im.size[1] != 64:
-                        self.right_imgs["face"][i] = ImageTk.PhotoImage(im.resize((64, 64)))
-                    else:
-                        self.right_imgs["face"][i] = ImageTk.PhotoImage(im)
-                    self.right_obj["face"][i].config(image=(self.right_imgs["face"][i]))
-                # update type
-                tmp_type1 = self.tem_db.iat[tem_list[i], 3]
-                self.right_imgs["type1"][i] = tmp_type1
-                self.right_obj["type1"][i].config(image=self.type_imgs[tmp_type1])
-
-                tmp_type2 = self.tem_db.iat[tem_list[i], 4]
-                if tmp_type2 != "None":
-                    self.right_imgs["type2"][i] = tmp_type2
-                    self.right_obj["type2"][i].config(image=self.type_imgs[tmp_type2])
-                else:
-                    self.right_imgs["type2"][i] = "Dummy"
-                    self.right_obj["type2"][i].config(image=self.type_imgs["Dummy"])
-
-                tmp_name = self.tem_db.iat[tem_list[i], 1]
-                tmp_name_jp = self.tem_db.iat[tem_list[i], 2]
-                self.right_imgs["name"][i] = tmp_name
-                self.right_obj["name"][i].config(text=tmp_name_jp)
-                self.right_imgs["stats"][i] = [self.tem_db.iloc[tem_list[i], 5], self.tem_db.iloc[tem_list[i], 6], self.tem_db.iloc[tem_list[i], 7], self.tem_db.iloc[tem_list[i], 8], self.tem_db.iloc[tem_list[i], 9], self.tem_db.iloc[tem_list[i], 10], self.tem_db.iloc[tem_list[i], 11]]
-                if self.link_var.get() == "official":
-                    link_list[1].append("https://temtem.wiki.gg/wiki/" + tmp_name)
-                else:
-                    link_list[1].append("https://temtetsu.pages.dev/species/" + str(self.tem_db.iat[tem_list[i], 0]))
-
-            # doesn't work in for loop?????
-            self.right_obj["name"][0].bind("<Button-1>",lambda e:self.link_click(link_list[1][0]))
-            self.right_obj["name"][1].bind("<Button-1>",lambda e:self.link_click(link_list[1][1]))
-            self.right_obj["name"][2].bind("<Button-1>",lambda e:self.link_click(link_list[1][2]))
-            self.right_obj["name"][3].bind("<Button-1>",lambda e:self.link_click(link_list[1][3]))
-            self.right_obj["name"][4].bind("<Button-1>",lambda e:self.link_click(link_list[1][4]))
-            self.right_obj["name"][5].bind("<Button-1>",lambda e:self.link_click(link_list[1][5]))
-            self.right_obj["name"][6].bind("<Button-1>",lambda e:self.link_click(link_list[1][6]))
-            self.right_obj["name"][7].bind("<Button-1>",lambda e:self.link_click(link_list[1][7]))
+                self.update_whole_data(lr_idx=1, tem_idx = tem_list[i], tgt_obj_idx=i, tem_face_img=face_img_list[i])  
+                
             
             # update sub windows if they are opend
             if self.res_sub.obj[1] is not None:
@@ -513,6 +467,9 @@ class Window():
             if self.stats_sub.obj[1] is not None:
                 self.close_stats_win(1)
                 self.show_stats(left_flag=False)
+        else:   # 検出かからない場合は背景色だけ元に戻す
+            for i in range(8):
+                self.buf_obj[1]["face"][i].config(bg="white")
                 
 
          
@@ -536,15 +493,15 @@ class Window():
             tmp_x = str(self.res_sub.pos[flag_idx][0] - 8)      # なぜかずれるのでオフセットが必要
             tmp_y = str(self.res_sub.pos[flag_idx][1] - 31)     # なぜかずれるのでオフセットが必要
         
-        tmp_w, tmp_h = 500, 400
+        tmp_w, tmp_h = 460, 340
         if self.res_sub.size[flag_idx] is not None:
             tmp_w, tmp_h = self.res_sub.size[flag_idx]
              
         self.res_sub.obj[flag_idx].geometry(str(tmp_w)+"x"+str(tmp_h)+"+"+tmp_x+"+"+tmp_y)
         self.res_sub.obj[flag_idx].title('Team Resistances')
-        type_window = Frame(self.res_sub.obj[flag_idx], width = tmp_w, height = tmp_h)
-        type_window.pack(fill='both', expand=True)
-
+        #type_window = Frame(self.res_sub.obj[flag_idx], width = tmp_w, height = tmp_h)
+        type_window = Frame(self.res_sub.obj[flag_idx])
+        type_window.pack(anchor="center")
             
         # Obj for get type info
         dp = data_processor()
@@ -558,17 +515,11 @@ class Window():
                    
         for i in range(8):
             # get tem type info
-            tmp_name = self.right_obj["name"][i].cget("text")
+            tmp_name = self.buf_obj[1]["name"][i].cget("text")
             if tmp_name != "None":
-                if left_flag:
-                    tmp_type1= self.left_imgs["type1"][i] if self.left_imgs["type1"][i] is not "Dummy" else None
-                    tmp_type2= self.left_imgs["type2"][i] if self.left_imgs["type2"][i] is not "Dummy" else None
-                    face = Label(type_window,image=self.left_imgs["face"][i], height = 32, width=32)
-                else:
-                    tmp_type1= self.right_imgs["type1"][i] if self.right_imgs["type1"][i] is not "Dummy" else None
-                    tmp_type2= self.right_imgs["type2"][i] if self.right_imgs["type2"][i] is not "Dummy" else None
-                    face = Label(type_window,image=self.right_imgs["face"][i], height = 32, width=32)
-
+                tmp_type1= self.buf_imgs[flag_idx]["type1"][i] if self.buf_imgs[flag_idx]["type1"][i] is not "Dummy" else None
+                tmp_type2= self.buf_imgs[flag_idx]["type2"][i] if self.buf_imgs[flag_idx]["type2"][i] is not "Dummy" else None
+                face = Label(type_window,image=self.buf_imgs[flag_idx]["face"][i], height = 32, width=32)
                 res_summary = dp.calc_type_res(type1=tmp_type1, type2=tmp_type2)
                 face.grid(column=0, row=i+1)
                 for j in range(len(res_summary)):
@@ -582,7 +533,8 @@ class Window():
                     elif res_summary[j] == "0.25":
                         tmp_color="red"
                     res_num = Label(type_window, text="x"+res_summary[j], height = 2, width=4, relief=SOLID, bg=tmp_color)
-                    res_num.grid(column=j+1, row=i+1)        
+                    res_num.grid(column=j+1, row=i+1) 
+          
         self.res_sub.obj[flag_idx].protocol("WM_DELETE_WINDOW", lambda : self.close_res_win(flag_idx))
         
         
@@ -617,14 +569,14 @@ class Window():
             tmp_x = str(self.stats_sub.pos[flag_idx][0] - 8)
             tmp_y = str(self.stats_sub.pos[flag_idx][1] - 31)     
      
-        tmp_w, tmp_h = 500, 400
+        tmp_w, tmp_h = 390, 320
         if self.stats_sub.size[flag_idx] is not None:
             tmp_w, tmp_h = self.stats_sub.size[flag_idx]
      
         self.stats_sub.obj[flag_idx].geometry(str(tmp_w)+"x"+str(tmp_h)+"+"+tmp_x+"+"+tmp_y)
         self.stats_sub.obj[flag_idx].title('Team Stats')
-        stats_window = Frame(self.stats_sub.obj[flag_idx], width = tmp_w, height = tmp_h)
-        stats_window.pack(fill='both', expand=True)
+        stats_window = Frame(self.stats_sub.obj[flag_idx])
+        stats_window.pack(anchor="center")
 
         # Obj for get type info
         stats_list = ["HP", "STA", "SPD", "ATK", "DEF", "SPATK", "SPDEF"]
@@ -637,16 +589,12 @@ class Window():
                    
         for i in range(8):
             # get tem type info
-            tmp_name = self.right_obj["name"][i].cget("text")
+            tmp_name = self.buf_obj[1]["name"][i].cget("text")
             if tmp_name is not "None":
 
-                if left_flag:
-                    tmp_stats = self.left_imgs["stats"][i]
-                    face = Label(stats_window,image=self.left_imgs["face"][i], height = 32, width=32)
-                else:
-                    tmp_stats = self.right_imgs["stats"][i]
-                    face = Label(stats_window,image=self.right_imgs["face"][i], height = 32, width=32)
-
+                tmp_stats = self.buf_imgs[flag_idx]["stats"][i]
+                face = Label(stats_window,image=self.buf_imgs[flag_idx]["face"][i], height = 32, width=32)
+                
                 face.grid(column=0, row=i+1)
                 for j in range(len(tmp_stats)):
                     tmp_color="azure"
@@ -681,10 +629,10 @@ class Window():
         tb1 = ttk.Entry(sub_win, width=10)
         tb2 = ttk.Entry(sub_win,width=10)
         dump_check = ttk.Checkbutton(sub_win, text="検出枠出力", variable=self.detection_dump_flag, onvalue=True, offvalue=False)
-        ref_bt = Button(sub_win, text="反映", command=lambda: self.update_config_file(
+        ref_bt = ttk.Button(sub_win, text="反映", command=lambda: self.update_config_file(
             "det_win",
             ["ofst_x", "ofst_y", "dump"],
-            [self.is_num(tb1.get()), self.is_num(tb2.get()), self.detection_dump_flag.get()]
+            [is_num(tb1.get()), is_num(tb2.get()), self.detection_dump_flag.get()]
             ))
         tb1.delete(0, END)
         tb2.delete(0, END)
@@ -701,12 +649,7 @@ class Window():
         dump_check.grid(column=0, row=3)
         ref_bt.grid(column=0, row=4)
            
-    #def update_ofst_params(self, in_x_ofst, in_y_ofst, flag):
-    #    self.config_data["det_win"]["ofst_x"] = in_x_ofst
-    #    self.config_data["det_win"]["ofst_y"] = in_y_ofst
-    #    self.config_data["det_win"]["dump"] = flag
-        #save_setting_init([str(in_x_ofst), str(in_y_ofst), "True" if self.detection_ofs["dump_flag"].get() else "False", self.detection_ofs["link_var"].get()])
-    #    save_config_data(self.yaml_path, self.config_data)
+  
     def update_config_file(self, tgt_key, param_names, param_data):
         if len(param_names) != len(param_data):
             return
@@ -741,10 +684,10 @@ class Window():
         tb2.delete(0, END)
         tb1.insert(END, str(self.config_data["general"]["show_ofst_x"]))
         tb2.insert(END, str(self.config_data["general"]["show_ofst_y"]))
-        ref_bt = Button(sub_win, text="保存", command=lambda: self.update_config_file(
+        ref_bt = ttk.Button(sub_win, text="保存", command=lambda: self.update_config_file(
             "general",
             ["link", "show_ofst_x", "show_ofst_y"],
-            [self.link_var.get(), self.is_num(tb1.get()), self.is_num(tb2.get())])
+            [self.link_var.get(), is_num(tb1.get()), is_num(tb2.get())])
             )
         tmp_void0.grid(column=0, row=2, columnspan=3, sticky=E+W)
         tmp_text00.grid(column=0, row=3, columnspan=3, sticky=W)
@@ -756,21 +699,105 @@ class Window():
         tb2.grid(column=1, row=5, sticky=W)
         tmp_text4.grid(column=2, row=5, sticky=W)
         ref_bt.grid(column=0, row=6, columnspan=3, sticky=E+W, padx=4, pady=4 )
-
-
         
+        
+    def run_re_detection(self, lr_idx, tem_face_img, idx):
+        
+        image_dir = os.path.join(BASE_DIR, "data", "port")  #".\\data\\port"
+        
+        if len(self.list_re_det) > 0:
+            return
+        #self.list_re_det = []
+        #self.selected_tem = None
+        
+        # 0) 別ウィンドウを表示する
+        sub_win = Toplevel()
+        if lr_idx == 0:
+            tmp_x = str(self.buf_obj[0]["face"][idx].winfo_rootx())
+            tmp_y = str(self.buf_obj[0]["face"][idx].winfo_rooty())
+        else:
+            tmp_x = str(self.buf_obj[1]["face"][idx].winfo_rootx())
+            tmp_y = str(self.buf_obj[1]["face"][idx].winfo_rooty())
+        sub_win.geometry("360x150+"+tmp_x+"+"+tmp_y)
+        sub_win.title('Re-Detection')
+        sub_win.protocol("WM_DELETE_WINDOW", lambda : self.destroy_re_det_win(sub_win))
+        frame_blank= Frame(sub_win)
+        frame_blank.pack()
+        text_disc = Label(frame_blank, text="認識結果 - 上位5位", anchor="w")
+        text_disc.pack(side=TOP, fill='x')
+        frame_img = Frame(frame_blank)
+        frame_img.pack(side=TOP)
+        
+        
+        # 1) 再度認識をかけて上位5種を取得する
+        self.list_best_five = re_img_detection(tem_face_img)
+         
+        # 2) 取得したテムの画像をウィンドウに表示する
+        list_best_five_obj = []
+        for i in range(len(self.list_best_five)):
+            image_name = os.path.join(image_dir, str(self.list_best_five[i]).zfill(5)+".png")
+            with Image.open(image_name) as im:
+                if im.size[0] != 64 and im.size[1] != 64:
+                    tmp = ImageTk.PhotoImage(im.resize((64, 64)))
+                else:
+                    tmp = ImageTk.PhotoImage(im)
+                #list_best_five_img.append(tmp)
+                self.list_re_det.append(tmp)
+                list_best_five_obj.append(Button(frame_img, image=self.list_re_det[i], bg="white"))
+                list_best_five_obj[i].pack(side=LEFT)
+                list_best_five_obj[i].bind("<Button-1>",lambda e, c=i:self.tem_selection(list_best_five_obj, c))
+        
+        # 3) 決定ボタンを押すとそのテムが窓に表示される
+        button_determin = Button(frame_blank, text="反映", command=lambda sw=sub_win, lr=lr_idx, tfi=tem_face_img, oidx=idx: self.close_re_det_window(subwindow=sw, lr_idx=lr, obj_idx=oidx, tem_face_image=tfi))
+        button_determin.pack(side=TOP)
+        
+        
+    def close_re_det_window(self, subwindow, lr_idx,  obj_idx, tem_face_image):
+        if self.selected_tem is None:   # まだ選択されていない場合は何もしない
+            return 
+        # update window
+        self.update_whole_data(lr_idx=lr_idx, tem_idx = self.list_best_five[self.selected_tem], tgt_obj_idx=obj_idx, tem_face_img=tem_face_image)
+        self.destroy_re_det_win(subwindow)
+        
+    def destroy_re_det_win(self, sub_win):
+        self.selected_tem = None
+        self.list_re_det = []
+        sub_win.destroy()
+        
+
+    def tem_selection(self, list_obj, current_idx): # 
+        
+        if current_idx == self.selected_tem:
+            return
+        else:
+            list_obj[current_idx].config(bg="turquoise1")
+            if self.selected_tem is not None:
+                list_obj[self.selected_tem].config(bg="white")
+            self.selected_tem = current_idx
+        return
+    
+    def change_tem_face_bg(self, lr_idx, obj_idx):
+        cur_col = self.buf_obj[lr_idx]["face"][obj_idx].cget('bg')
+        if cur_col == "white":
+            self.buf_obj[lr_idx]["face"][obj_idx].config(bg="turquoise1")
+        elif cur_col == 'turquoise1':
+            self.buf_obj[lr_idx]["face"][obj_idx].config(bg="tomato")
+        else:
+            self.buf_obj[lr_idx]["face"][obj_idx].config(bg="white")
+        
+    
     def show_tem_face_window(self, left_flag=True, idx=0):
         return  # 使用不可
         sub_win = Toplevel()
         # get position
         if left_flag:
-            tmp_x = str(self.left_obj['face'][idx].winfo_rootx()-300)
-            tmp_y = str(self.left_obj['face'][idx].winfo_rooty())
-            tmp_name = str(self.left_obj['name'][idx].cget("text"))
+            tmp_x = str(self.buf_obj[0]['face'][idx].winfo_rootx()-300)
+            tmp_y = str(self.buf_obj[0]['face'][idx].winfo_rooty())
+            tmp_name = str(self.buf_obj[0]['name'][idx].cget("text"))
         else:
-            tmp_x = str(self.right_obj['face'][idx].winfo_rootx())
-            tmp_y = str(self.right_obj['face'][idx].winfo_rooty())
-            tmp_name = str(self.right_obj['name'][idx].cget("text"))
+            tmp_x = str(self.buf_obj[1]['face'][idx].winfo_rootx())
+            tmp_y = str(self.buf_obj[1]['face'][idx].winfo_rooty())
+            tmp_name = str(self.buf_obj[1]['name'][idx].cget("text"))
         
         sub_win.geometry("400x300+"+tmp_x+"+"+tmp_y)
         sub_win.title(tmp_name)
@@ -779,11 +806,11 @@ class Window():
         
         
         if left_flag:
-            tmp_stats = self.left_imgs["stats"][idx]
-            face = Label(tem_face_window,image=self.left_imgs["face"][idx], height = 64, width=64)
+            tmp_stats = self.buf_imgs[0]["stats"][idx]
+            face = Label(tem_face_window,image=self.buf_imgs[0]["face"][idx], height = 64, width=64)
         else:
-            tmp_stats = self.right_imgs["stats"][idx]
-            face = Label(tem_face_window,image=self.right_imgs["face"][idx], height = 64, width=64)
+            tmp_stats = self.buf_imgs[1]["stats"][idx]
+            face = Label(tem_face_window,image=self.buf_imgs[1]["face"][idx], height = 64, width=64)
         face.grid(column=0, row=0, columnspan=2, rowspan=2, padx=6, pady=6)
         
         # status 
